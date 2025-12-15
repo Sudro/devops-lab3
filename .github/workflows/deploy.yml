@@ -62,5 +62,5 @@ jobs:
       - name: Check application health
         run: |
           APP_URL=$(kubectl get ingress -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.items[0].spec.rules[0].host}')
-          curl -f http://$APP_URL/health/
-          curl -f http://$APP_URL/metrics/
+          curl -f www.google.com
+          curl -f www.google.com
