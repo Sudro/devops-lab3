@@ -1,0 +1,65 @@
+global:
+  namespace: django-app
+
+image:
+  repository: "192.168.1.11:30500/django-app"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: regcred
+
+app:
+  replicas: 3
+  port: 8000
+  nodePort: 30081
+  serviceType: NodePort
+  env:
+  DEBUG: "False"
+  ALLOWED_HOSTS: "*"
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+postgresql:
+  enabled: true
+  auth:
+    database: "django_app"
+    username: "django_user"
+    password: "postgres_password_123"
+    host: "postgres-service"
+    port: "5432"
+  persistence:
+    enabled: true
+    size: 5Gi
+
+vault:
+  enabled: true
+  address: "http://10.107.120.29:8200"
+  secretPath: "secret/data/django-app"
+
+ingress:
+  enabled: true
+  hosts:
+    - paths:
+        - path: /
+          pathType: Prefix
+          port: 80
+  tls: []
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+configMap:
+  DEBUG: "False"
+  ALLOWED_HOSTS: "*"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+

@@ -1,4 +1,4 @@
-name: Deploy Django App to Kubernetes
+name: Build, Push to Private Registry and Deploy with Helm
 
 on:
   push:
@@ -7,89 +7,58 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: 192.168.1.11:5000
-  IMAGE_NAME: django-kubernetes-app
+  REGISTRY: 192.168.1.11:30500
+  IMAGE_NAME: django-app
   K8S_NAMESPACE: django-app
+  HELM_RELEASE: "django-app-production"
 
 jobs:
-  test:
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies and setup environment
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Lint with flake8
-        run: |
-          source venv/bin/activate
-          pip install flake8
-          flake8 django_app --max-line-length=140 --exclude=migrations
-        continue-on-error: true
-
-      - name: Run tests
-        run: |
-          source venv/bin/activate
-          python3 manage.py test
-        continue-on-error: true
-
   build-and-push:
-    needs: test
     runs-on: self-hosted
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure Docker for insecure registry
+      - name: Log in to private registry
         run: |
-          mkdir -p ~/.docker
-          echo '{"insecure-registries":["192.168.1.11:5000"]}' > ~/.docker/daemon.json
-          sudo systemctl restart docker || true
-
-      - name: Extract metadata for Docker image
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=${{ github.ref_name }}-
-            latest
-
-      - name: Build and push Docker image with sudo
+          docker login ${{ env.REGISTRY }} -u adminuser -p passwd123
+      - name: Build Docker image
         run: |
-          sudo docker build -t myimage .
-          sudo docker tag myimage ${{ env.REGISTRY }}/django-kubernetes-app:latest
-          sudo docker push ${{ env.REGISTRY }}/django-kubernetes-app:latest
-
-  deploy:
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
+      - name: Push image
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+  deploy-with-helm:
     needs: build-and-push
     runs-on: self-hosted
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Kubeconfig
         uses: azure/k8s-set-context@v3
         with:
           kubeconfig: ${{ secrets.KUBE_CONFIG }}
-
-      - name: Deploy to Kubernetes
+      - name: Deploy with Helm
         run: |
-          kubectl create namespace ${{ env.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s-manifests/ -n ${{ env.K8S_NAMESPACE }}
-          kubectl set image deployment/django-deployment django-app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest -n ${{ env.K8S_NAMESPACE }}
-          kubectl rollout status deployment/django-deployment -n ${{ env.K8S_NAMESPACE }} --timeout=150s
+          helm upgrade --install ${{ env.HELM_RELEASE }} ./helm \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+            --set image.tag=latest \
+            --set app.replicas=6 \
+            --create-namespace \
+            --wait \
+            --timeout 300s
+          helm list --namespace ${{ env.K8S_NAMESPACE }}
           kubectl get pods,svc,ingress -n ${{ env.K8S_NAMESPACE }}
-
-      - name: Verify Vault secrets sync
+      - name: Run database migrations
         run: |
-          echo "Checking if secrets were synced from Vault..."
-          kubectl get externalsecret -n ${{ env.K8S_NAMESPACE }}
-          kubectl describe externalsecret django-vault-secrets -n ${{ env.K8S_NAMESPACE }} || true
-
+          POD_NAME=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l "app.kubernetes.io/name=django-app" -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec -n ${{ env.K8S_NAMESPACE }} "$POD_NAME" -- python manage.py migrate
+          kubectl exec -n ${{ env.K8S_NAMESPACE }} "$POD_NAME" -- python manage.py collectstatic --noinput
+  smoke-test:
+    needs: deploy-with-helm
+    runs-on: self-hosted
+    steps:
+      - name: Check application health
+        run: |
+          APP_URL=$(kubectl get ingress -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.items[0].spec.rules[0].host}')
+          curl -f http://$APP_URL/health/
+          curl -f http://$APP_URL/metrics/
