@@ -19,13 +19,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Log in to private registry
         run: |
-          docker login ${{ env.REGISTRY }} -u adminuser -p passwd123
+          sudo docker login ${{ env.REGISTRY }} -u adminuser -p passwd123
       - name: Build Docker image
         run: |
-          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
+          sudo docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
       - name: Push image
         run: |
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          sudo docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
   deploy-with-helm:
     needs: build-and-push
     runs-on: self-hosted
