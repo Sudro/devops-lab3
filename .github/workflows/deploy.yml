@@ -52,7 +52,7 @@ jobs:
           kubectl get pods,svc,ingress -n ${{ env.K8S_NAMESPACE }}
       - name: Run database migrations
         run: |
-          POD_NAME=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l "app=django-app" -o jsonpath='{.items[7].metadata.name}')
+          POD_NAME=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l "app=django-app" -o jsonpath='{.items[3].metadata.name}')
           kubectl exec -n ${{ env.K8S_NAMESPACE }} "$POD_NAME" -- ls
           kubectl exec -n ${{ env.K8S_NAMESPACE }} "$POD_NAME" -- pwd
   smoke-test:
