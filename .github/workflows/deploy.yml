@@ -43,6 +43,8 @@ jobs:
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
             --set image.tag=latest \
             --set app.replicas=6 \
+            --set postgresql.image.tag=latest \
+            --reuse-values \
             --create-namespace \
             --wait \
             --timeout 300s
